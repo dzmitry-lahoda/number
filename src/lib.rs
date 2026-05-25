@@ -55,6 +55,30 @@ impl Number {
         Self(Rational::from(value))
     }
 
+    pub const fn new_nonzero_i8(value: core::num::NonZeroI8) -> Self {
+        Self::new_i8(value.get())
+    }
+
+    pub const fn new_nonzero_i16(value: core::num::NonZeroI16) -> Self {
+        Self::new_i16(value.get())
+    }
+
+    pub const fn new_nonzero_i32(value: core::num::NonZeroI32) -> Self {
+        Self::new_i32(value.get())
+    }
+
+    pub const fn new_nonzero_i64(value: core::num::NonZeroI64) -> Self {
+        Self::new_i64(value.get())
+    }
+
+    pub const fn new_nonzero_isize(value: core::num::NonZeroIsize) -> Self {
+        Self::new_isize(value.get())
+    }
+
+    pub fn new_nonzero_i128(value: core::num::NonZeroI128) -> Self {
+        Self::new_i128(value.get())
+    }
+
     pub const fn new_u8(value: u8) -> Self {
         Self(Rational::const_from_unsigned(value as u64))
     }
@@ -77,6 +101,30 @@ impl Number {
 
     pub fn new_u128(value: u128) -> Self {
         Self(Rational::from(value))
+    }
+
+    pub const fn new_nonzero_u8(value: core::num::NonZeroU8) -> Self {
+        Self::new_u8(value.get())
+    }
+
+    pub const fn new_nonzero_u16(value: core::num::NonZeroU16) -> Self {
+        Self::new_u16(value.get())
+    }
+
+    pub const fn new_nonzero_u32(value: core::num::NonZeroU32) -> Self {
+        Self::new_u32(value.get())
+    }
+
+    pub const fn new_nonzero_u64(value: core::num::NonZeroU64) -> Self {
+        Self::new_u64(value.get())
+    }
+
+    pub const fn new_nonzero_usize(value: core::num::NonZeroUsize) -> Self {
+        Self::new_usize(value.get())
+    }
+
+    pub fn new_nonzero_u128(value: core::num::NonZeroU128) -> Self {
+        Self::new_u128(value.get())
     }
 
     pub const fn new_ratio_i64(numerator: i64, denominator: i64) -> Self {
@@ -221,6 +269,29 @@ impl borsh::BorshDeserialize for Number {
     }
 }
 
+macro_rules! impl_from_nonzero {
+    ($type:ty, $constructor:ident) => {
+        impl From<$type> for Number {
+            fn from(value: $type) -> Self {
+                Self::$constructor(value)
+            }
+        }
+    };
+}
+
+impl_from_nonzero!(core::num::NonZeroI8, new_nonzero_i8);
+impl_from_nonzero!(core::num::NonZeroI16, new_nonzero_i16);
+impl_from_nonzero!(core::num::NonZeroI32, new_nonzero_i32);
+impl_from_nonzero!(core::num::NonZeroI64, new_nonzero_i64);
+impl_from_nonzero!(core::num::NonZeroI128, new_nonzero_i128);
+impl_from_nonzero!(core::num::NonZeroIsize, new_nonzero_isize);
+impl_from_nonzero!(core::num::NonZeroU8, new_nonzero_u8);
+impl_from_nonzero!(core::num::NonZeroU16, new_nonzero_u16);
+impl_from_nonzero!(core::num::NonZeroU32, new_nonzero_u32);
+impl_from_nonzero!(core::num::NonZeroU64, new_nonzero_u64);
+impl_from_nonzero!(core::num::NonZeroU128, new_nonzero_u128);
+impl_from_nonzero!(core::num::NonZeroUsize, new_nonzero_usize);
+
 #[cfg(feature = "num-bigint")]
 impl From<num_bigint::BigInt> for Number {
     fn from(value: num_bigint::BigInt) -> Self {
@@ -259,6 +330,47 @@ mod tests {
     #[test]
     fn creates_from_primitive_integer() {
         assert_eq!(Number::new_i32(-7), Number::new_i64(-7));
+    }
+
+    #[test]
+    fn creates_from_nonzero_integers() {
+        const I8: core::num::NonZeroI8 = core::num::NonZeroI8::new(-1).unwrap();
+        const I16: core::num::NonZeroI16 = core::num::NonZeroI16::new(-2).unwrap();
+        const I32: core::num::NonZeroI32 = core::num::NonZeroI32::new(-3).unwrap();
+        const I64: core::num::NonZeroI64 = core::num::NonZeroI64::new(-4).unwrap();
+        const ISIZE: core::num::NonZeroIsize = core::num::NonZeroIsize::new(-5).unwrap();
+        const U8: core::num::NonZeroU8 = core::num::NonZeroU8::new(1).unwrap();
+        const U16: core::num::NonZeroU16 = core::num::NonZeroU16::new(2).unwrap();
+        const U32: core::num::NonZeroU32 = core::num::NonZeroU32::new(3).unwrap();
+        const U64: core::num::NonZeroU64 = core::num::NonZeroU64::new(4).unwrap();
+        const USIZE: core::num::NonZeroUsize = core::num::NonZeroUsize::new(5).unwrap();
+
+        const FROM_I8: Number = Number::new_nonzero_i8(I8);
+        const FROM_I16: Number = Number::new_nonzero_i16(I16);
+        const FROM_I32: Number = Number::new_nonzero_i32(I32);
+        const FROM_I64: Number = Number::new_nonzero_i64(I64);
+        const FROM_ISIZE: Number = Number::new_nonzero_isize(ISIZE);
+        const FROM_U8: Number = Number::new_nonzero_u8(U8);
+        const FROM_U16: Number = Number::new_nonzero_u16(U16);
+        const FROM_U32: Number = Number::new_nonzero_u32(U32);
+        const FROM_U64: Number = Number::new_nonzero_u64(U64);
+        const FROM_USIZE: Number = Number::new_nonzero_usize(USIZE);
+
+        assert_eq!(FROM_I8, Number::new_i8(-1));
+        assert_eq!(FROM_I16, Number::new_i16(-2));
+        assert_eq!(FROM_I32, Number::new_i32(-3));
+        assert_eq!(FROM_I64, Number::new_i64(-4));
+        assert_eq!(FROM_ISIZE, Number::new_isize(-5));
+        assert_eq!(FROM_U8, Number::new_u8(1));
+        assert_eq!(FROM_U16, Number::new_u16(2));
+        assert_eq!(FROM_U32, Number::new_u32(3));
+        assert_eq!(FROM_U64, Number::new_u64(4));
+        assert_eq!(FROM_USIZE, Number::new_usize(5));
+
+        let i128 = core::num::NonZeroI128::new(-6).unwrap();
+        let u128 = core::num::NonZeroU128::new(6).unwrap();
+        assert_eq!(Number::new_nonzero_i128(i128), Number::new_i128(-6));
+        assert_eq!(Number::from(u128), Number::new_u128(6));
     }
 
     #[test]
