@@ -53,12 +53,16 @@ fn formulas() {
     let adjusted_numerator = numerator + 3;
     let adjusted_denominator = denominator - 2;
 
-    let weighted = num!(input) / 3 - u128::MAX * num!(2 / 3).pow(3i16);
+    let weighted = input / num!(3) - u128::MAX * num!(2 / 3).pow(3i16);
+    let raw_literal_start = 100 / num!(4) + 3;
+    let raw_variable_start = input + Number::new_i64(1);
     let signed_adjustment = fee_enabled * num!(5 / 2) + Some(false);
     let ratio_from_variables = num!(numerator / denominator);
     let adjusted_ratio = num!(adjusted_numerator / adjusted_denominator);
     let composed = (weighted + signed_adjustment) * &ratio_from_variables / &adjusted_ratio;
 
+    assert_eq!(raw_literal_start, Number::new_i64(28));
+    assert_eq!(raw_variable_start, Number::new_i64(45));
     assert_eq!(ratio_from_variables, Number::new_ratio_i64(9, 8));
     assert_eq!(adjusted_ratio, Number::new_i64(2));
     assert_eq!(
