@@ -1,8 +1,19 @@
+#![allow(clippy::erasing_op)]
+
 use number::{Number, num};
 
 #[test]
 fn creates_from_primitive_integer() {
     assert_eq!(Number::new_i32(-7), Number::new_i64(-7));
+}
+
+#[test]
+fn creates_from_boolean_state() {
+    assert_eq!(Number::from(true), num!(1));
+    assert_eq!(Number::from(false), num!(-1));
+    assert_eq!(Number::from(Some(true)), num!(1));
+    assert_eq!(Number::from(Some(false)), num!(-1));
+    assert_eq!(Number::from(None::<bool>), num!(0));
 }
 
 #[test]
@@ -14,6 +25,46 @@ fn supports_ordering_and_hashing() {
     let mut set = std::collections::HashSet::new();
     set.insert(Number::new_ratio_i64(2, 4));
     assert!(set.contains(&Number::new_ratio_i64(1, 2)));
+}
+
+#[test]
+fn compares_signed_integer_samples() {
+    use core::cmp::Ordering::{Equal, Greater, Less};
+
+    let samples = [
+        (-1, -1, Equal),
+        (-1, 0, Less),
+        (-1, 1, Less),
+        (0, -1, Greater),
+        (0, 0, Equal),
+        (0, 1, Less),
+        (1, -1, Greater),
+        (1, 0, Greater),
+        (1, 1, Equal),
+        (999, 1000, Less),
+        (1000, 1000, Equal),
+        (1001, 1000, Greater),
+        (1000, 999, Greater),
+        (1000, 1001, Less),
+        (-999, -1000, Greater),
+        (-1000, -1000, Equal),
+        (-1001, -1000, Less),
+        (-1000, -999, Less),
+        (-1000, -1001, Greater),
+    ];
+
+    for (left, right, result) in samples {
+        assert_eq!(
+            Number::new_i64(left).cmp(&Number::new_i64(right)),
+            result,
+            "{left:?} {} {right:?}",
+            match result {
+                Less => "<",
+                Equal => "=",
+                Greater => ">",
+            }
+        );
+    }
 }
 
 #[test]
@@ -31,6 +82,32 @@ fn supports_math_ops_with_convertible_numbers() {
 
     let nonzero = core::num::NonZeroI32::new(3).unwrap();
     assert_eq!(nonzero + one_half, Number::new_ratio_i64(7, 2));
+
+    assert_eq!(true + Number::new_i64(2), Number::new_i64(3));
+    assert_eq!(false * Number::new_i64(2), Number::new_i64(-2));
+    assert_eq!(Some(true) - Number::new_i64(2), Number::new_i64(-1));
+    assert_eq!(None::<bool> + Number::new_i64(2), Number::new_i64(2));
+}
+
+#[test]
+fn supports_signed_integer_math_identities() {
+    assert_eq!(num!(1) + 2, num!(3));
+    assert_eq!(2 + num!(1), num!(3));
+    assert_eq!(num!(-1) + -2, num!(-3));
+    assert_eq!(-2 + num!(-1), num!(-3));
+    assert_eq!(num!(-1) + 2, num!(1));
+    assert_eq!(num!(-2) + 1, num!(-1));
+    assert_eq!(num!(2) - 1, num!(1));
+    assert_eq!(num!(1) - 2, num!(-1));
+    assert_eq!(num!(0) - 0, num!(0));
+    assert_eq!(num!(1) - 1, num!(0));
+    assert_eq!(num!(1) + -1, num!(0));
+    assert_eq!(num!(0) * -1, num!(0));
+    assert_eq!(num!(1) * 0, num!(0));
+    assert_eq!(num!(3) * 2, num!(6));
+    assert_eq!(num!(-3) * -2, num!(6));
+    assert_eq!(num!(3) * -2, num!(-6));
+    assert_eq!(num!(-3) * 2, num!(-6));
 }
 
 #[test]
@@ -40,6 +117,9 @@ fn raises_to_integer_powers() {
     assert_eq!(two_thirds.clone().pow(3i16), Number::new_ratio_i64(8, 27));
     assert_eq!(two_thirds.clone().pow(-2i16), Number::new_ratio_i64(9, 4));
     assert_eq!(two_thirds.pow(0i16), Number::new_i64(1));
+
+    assert_eq!(format!("{:?}", num!(2).pow(3i16)), "8");
+    assert_eq!(format!("{:?}", num!(-2).pow(3i16)), "-8");
 }
 
 #[test]
@@ -103,10 +183,148 @@ fn creates_from_nonzero_integers() {
 }
 
 #[test]
+fn tries_into_primitive_integers() {
+    macro_rules! assert_try_from_number {
+        ($type:ty, $constructor:ident, $value:expr) => {{
+            let value: $type = $value;
+            let number = Number::$constructor(value);
+
+            assert_eq!(<$type>::try_from(number.clone()).unwrap(), value);
+            assert_eq!(<$type>::try_from(&number).unwrap(), value);
+        }};
+    }
+
+    assert_try_from_number!(i8, new_i8, i8::MIN);
+    assert_try_from_number!(i16, new_i16, i16::MIN);
+    assert_try_from_number!(i32, new_i32, i32::MIN);
+    assert_try_from_number!(i64, new_i64, i64::MIN);
+    assert_try_from_number!(i128, new_i128, i128::MIN);
+    assert_try_from_number!(isize, new_isize, isize::MIN);
+    assert_try_from_number!(u8, new_u8, u8::MAX);
+    assert_try_from_number!(u16, new_u16, u16::MAX);
+    assert_try_from_number!(u32, new_u32, u32::MAX);
+    assert_try_from_number!(u64, new_u64, u64::MAX);
+    assert_try_from_number!(u128, new_u128, u128::MAX);
+    assert_try_from_number!(usize, new_usize, usize::MAX);
+}
+
+#[test]
+fn rejects_invalid_primitive_integer_conversions() {
+    assert!(i8::try_from(Number::new_i64(i64::from(i8::MAX) + 1)).is_err());
+    assert!(u8::try_from(Number::new_i64(-1)).is_err());
+    assert!(u128::try_from(Number::new_i64(-1)).is_err());
+    assert!(i128::try_from(Number::new_u128(u128::MAX)).is_err());
+    assert!(i64::try_from(Number::new_ratio_i64(3, 2)).is_err());
+}
+
+#[test]
+fn tries_into_nonzero_integers() {
+    macro_rules! assert_try_from_number {
+        ($type:ty, $constructor:ident, $value:expr) => {{
+            let value: $type = <$type>::new($value).unwrap();
+            let number = Number::$constructor(value);
+
+            assert_eq!(<$type>::try_from(number.clone()).unwrap(), value);
+            assert_eq!(<$type>::try_from(&number).unwrap(), value);
+        }};
+    }
+
+    assert_try_from_number!(core::num::NonZeroI8, new_nonzero_i8, -1);
+    assert_try_from_number!(core::num::NonZeroI16, new_nonzero_i16, -2);
+    assert_try_from_number!(core::num::NonZeroI32, new_nonzero_i32, -3);
+    assert_try_from_number!(core::num::NonZeroI64, new_nonzero_i64, -4);
+    assert_try_from_number!(core::num::NonZeroI128, new_nonzero_i128, i128::MIN);
+    assert_try_from_number!(core::num::NonZeroIsize, new_nonzero_isize, -5);
+    assert_try_from_number!(core::num::NonZeroU8, new_nonzero_u8, 1);
+    assert_try_from_number!(core::num::NonZeroU16, new_nonzero_u16, 2);
+    assert_try_from_number!(core::num::NonZeroU32, new_nonzero_u32, 3);
+    assert_try_from_number!(core::num::NonZeroU64, new_nonzero_u64, 4);
+    assert_try_from_number!(core::num::NonZeroU128, new_nonzero_u128, u128::MAX);
+    assert_try_from_number!(core::num::NonZeroUsize, new_nonzero_usize, 5);
+
+    assert!(core::num::NonZeroU8::try_from(Number::new_i64(0)).is_err());
+    assert!(core::num::NonZeroI8::try_from(Number::new_ratio_i64(1, 2)).is_err());
+}
+
+#[test]
+fn creates_from_128_bit_integer_boundaries() {
+    const I64_MIN_AS_NUMBER: Number = Number::new_i64(i64::MIN);
+    const U64_MAX_AS_NUMBER: Number = Number::new_u64(u64::MAX);
+
+    assert_eq!(I64_MIN_AS_NUMBER, Number::new_i128(i64::MIN as i128));
+    assert_eq!(U64_MAX_AS_NUMBER, Number::new_u128(u64::MAX as u128));
+    assert_eq!(
+        format!("{:#?}", Number::new_i128(i128::MIN)),
+        i128::MIN.to_string()
+    );
+    assert_eq!(
+        format!("{:#?}", Number::new_i128(i128::MAX)),
+        i128::MAX.to_string()
+    );
+    assert_eq!(
+        format!("{:#?}", Number::new_u128(u128::MAX)),
+        u128::MAX.to_string()
+    );
+
+    let nonzero_i128 = core::num::NonZeroI128::new(i128::MIN).unwrap();
+    let nonzero_u128 = core::num::NonZeroU128::new(u128::MAX).unwrap();
+    assert_eq!(
+        Number::new_nonzero_i128(nonzero_i128),
+        Number::new_i128(i128::MIN)
+    );
+    assert_eq!(
+        Number::new_nonzero_u128(nonzero_u128),
+        Number::new_u128(u128::MAX)
+    );
+}
+
+#[test]
+fn supports_128_bit_ratios() {
+    let denominator = 1i128 << 100;
+    let numerator = denominator * 3;
+
+    assert_eq!(
+        Number::new_ratio_i128(numerator, denominator),
+        Number::new_i64(3)
+    );
+    assert_eq!(
+        format!("{:#?}", Number::new_ratio_i128(i128::MIN, i128::MAX)),
+        format!("{}/{}", i128::MIN, i128::MAX)
+    );
+    assert_eq!(
+        format!("{:#?}", Number::new_ratio_i128(i128::MAX - 1, i128::MAX)),
+        format!("{}/{}", i128::MAX - 1, i128::MAX)
+    );
+}
+
+#[test]
+fn supports_math_ops_with_128_bit_integers() {
+    let big_u = u128::MAX;
+    let big_i = i128::MIN + 1;
+    let half = Number::new_ratio_i64(1, 2);
+
+    assert_eq!(
+        format!("{:#?}", half.clone() + big_u),
+        "680564733841876926926749214863536422911/2"
+    );
+    assert_eq!(
+        format!("{:#?}", big_u - half.clone()),
+        "680564733841876926926749214863536422909/2"
+    );
+    assert_eq!(half.clone() * big_i, Number::new_ratio_i128(big_i, 2));
+    assert_eq!(
+        format!("{:#?}", big_i / half),
+        "-340282366920938463463374607431768211454"
+    );
+}
+
+#[test]
 fn creates_from_num_macro_at_const_time() {
     const NEGATIVE: Number = num!(-1231232312311232123);
+    const I64_MIN: Number = num!(-9223372036854775808);
     const ZERO: Number = num!(0);
     const POSITIVE: Number = num!(123123123);
+    const U64_MAX: Number = num!(18446744073709551615);
     const RATIO: Number = num!(32 / 12);
     const NEGATIVE_RATIO: Number = num!(-32 / 12);
     const NEGATIVE_DENOMINATOR_RATIO: Number = num!(32 / -12);
@@ -119,8 +337,10 @@ fn creates_from_num_macro_at_const_time() {
     const UNDERSCORED_DECIMAL: Number = num!(1_000.050);
 
     assert_eq!(NEGATIVE, Number::new_i64(-1231232312311232123));
+    assert_eq!(I64_MIN, Number::new_i64(i64::MIN));
     assert_eq!(ZERO, Number::new_i64(0));
     assert_eq!(POSITIVE, Number::new_i64(123123123));
+    assert_eq!(U64_MAX, Number::new_u64(u64::MAX));
     assert_eq!(RATIO, Number::new_ratio_i64(32, 12));
     assert_eq!(NEGATIVE_RATIO, Number::new_ratio_i64(-32, 12));
     assert_eq!(NEGATIVE_DENOMINATOR_RATIO, Number::new_ratio_i64(-32, 12));
@@ -137,8 +357,38 @@ fn creates_from_num_macro_at_const_time() {
 }
 
 #[test]
+fn creates_from_num_macro_with_convertible_expressions() {
+    let two = 2i32;
+    let numerator = 6i64;
+    let denominator = 4i64;
+    let adjusted_numerator = numerator + 2;
+    let adjusted_denominator = denominator - 2;
+    let big = u128::MAX;
+
+    assert_eq!(num!(two), Number::new_i64(2));
+    assert_eq!(num!(two + 3), Number::new_i64(5));
+    assert_eq!(num!(Some(false)), Number::new_i64(-1));
+    assert_eq!(num!(big), Number::new_u128(u128::MAX));
+    assert_eq!(num!(numerator / denominator), Number::new_ratio_i64(3, 2));
+    assert_eq!(num!(-numerator / denominator), Number::new_ratio_i64(-3, 2));
+    assert_eq!(
+        num!(adjusted_numerator / adjusted_denominator),
+        Number::new_i64(4)
+    );
+}
+
+#[test]
 fn debug_formats_rationals_as_decimal_numbers() {
+    assert_eq!(format!("{:?}", num!(-1)), "-1");
+    assert_eq!(format!("{:?}", num!(3)), "3");
+    assert_eq!(format!("{:?}", Number::new_i64(4) / 2), "2");
     assert_eq!(format!("{:?}", Number::new_ratio_i64(1, 2)), "0.5");
+    assert_eq!(format!("{:#?}", Number::new_ratio_i64(1, 2)), "1/2");
+    assert_eq!(format!("{:#?}", Number::new_ratio_i64(4, 2)), "2");
+    assert_eq!(format!("{:?}", Number::new_i64(7) / 4), "1.75");
+    assert_eq!(format!("{:?}", Number::new_i64(15) / 10), "1.5");
+    assert_eq!(format!("{:?}", Number::new_i64(105) / 100), "1.05");
+    assert_eq!(format!("{:?}", Number::new_i64(1) / 10), "0.1");
     assert_eq!(
         format!("{:?}", Number::new_ratio_i64(32, 12)),
         "2.66666666666666666666666666666666..."
@@ -150,6 +400,11 @@ fn debug_formats_rationals_as_decimal_numbers() {
         ),
         "1003123213.1231312321"
     );
+}
+
+#[test]
+fn zero_divided_by_integer_stays_zero() {
+    assert_eq!(Number::new_i64(0) / 10_000, num!(0));
 }
 
 #[cfg(feature = "serde")]
@@ -171,6 +426,16 @@ fn borsh_serializes_as_bytes() {
     assert_eq!(&encoded[..4], 3u32.to_le_bytes().as_slice());
     assert_eq!(&encoded[4..], b"2/3");
     assert_eq!(borsh::from_slice::<Number>(&encoded).unwrap(), number);
+}
+
+#[cfg(feature = "schemars")]
+#[test]
+fn schemars_schema_is_string() {
+    let schema = schemars::schema_for!(Number);
+    let schema = serde_json::to_value(schema).unwrap();
+
+    assert_eq!(schema["title"], "Number");
+    assert_eq!(schema["type"], "string");
 }
 
 #[cfg(feature = "num-bigint")]
@@ -222,19 +487,55 @@ fn supports_num_traits() {
         Number::new_ratio_i64(8, 27)
     );
     assert_eq!(
+        Pow::pow(Number::new_ratio_i64(2, 3), 3u8),
+        Number::new_ratio_i64(8, 27)
+    );
+    assert_eq!(
+        Pow::pow(Number::new_ratio_i64(2, 3), -2i8),
+        Number::new_ratio_i64(9, 4)
+    );
+    assert_eq!(
         Pow::pow(&Number::new_ratio_i64(2, 3), -2i16),
         Number::new_ratio_i64(9, 4)
     );
+    assert_eq!(
+        Pow::pow(&Number::new_ratio_i64(2, 3), 3u8),
+        Number::new_ratio_i64(8, 27)
+    );
+    assert_eq!(Number::one().signum() * 0, Number::zero());
+    assert_eq!(Number::one().signum() * 1, Number::one());
+    assert_eq!((-Number::one()).signum() * 0, Number::zero());
+    assert_eq!((-Number::one()).signum() * 1, num!(-1));
 }
 
-#[cfg(feature = "num-ration")]
+#[cfg(feature = "num-rational")]
 #[test]
 fn creates_from_num_rational() {
-    let rational = num_rational::Ratio::new(-22i32, 7);
+    const RATIONAL: num_rational::Ratio<i64> = num_rational::Ratio::new_raw(-22, 7);
+    const NUMBER: Number = Number::new_num_rational(RATIONAL);
+    const I8: Number = Number::new_num_rational_i8(num_rational::Ratio::new_raw(-2, 3));
+    const I16: Number = Number::new_num_rational_i16(num_rational::Ratio::new_raw(-4, 5));
+    const I32: Number = Number::new_num_rational_i32(num_rational::Ratio::new_raw(-44, 14));
+    const ISIZE: Number = Number::new_num_rational_isize(num_rational::Ratio::new_raw(-6, 7));
+    const U8: Number = Number::new_num_rational_u8(num_rational::Ratio::new_raw(2, 3));
+    const U16: Number = Number::new_num_rational_u16(num_rational::Ratio::new_raw(4, 5));
+    const U32: Number = Number::new_num_rational_u32(num_rational::Ratio::new_raw(44, 14));
+    const U64: Number = Number::new_num_rational_u64(num_rational::Ratio::new_raw(22, 7));
+    const USIZE: Number = Number::new_num_rational_usize(num_rational::Ratio::new_raw(6, 7));
 
+    assert_eq!(NUMBER, Number::new_ratio_i64(-22, 7));
+    assert_eq!(I8, Number::new_ratio_i64(-2, 3));
+    assert_eq!(I16, Number::new_ratio_i64(-4, 5));
+    assert_eq!(I32, Number::new_ratio_i64(-44, 14));
+    assert_eq!(ISIZE, Number::new_ratio_i64(-6, 7));
+    assert_eq!(U8, Number::new_ratio_i64(2, 3));
+    assert_eq!(U16, Number::new_ratio_i64(4, 5));
+    assert_eq!(U32, Number::new_ratio_i64(44, 14));
+    assert_eq!(U64, Number::new_ratio_i64(22, 7));
+    assert_eq!(USIZE, Number::new_ratio_i64(6, 7));
     assert_eq!(
-        Number::new_num_rational(rational),
-        Number::from(num_rational::Ratio::new(-44i32, 14))
+        Number::from(num_rational::Ratio::new(-44i32, 14)),
+        Number::new_ratio_i64(-22, 7)
     );
 }
 

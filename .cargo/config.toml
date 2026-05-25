@@ -1,0 +1,6 @@
+[alias]
+number-fmt = ["fmt", "--check"]
+number-clippy = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
+number-test = ["test", "--all-targets", "--all-features"]
+number-example = ["run", "--example", "usage", "--all-features"]
+number-powerset = ["hack", "check", "--feature-powerset"]

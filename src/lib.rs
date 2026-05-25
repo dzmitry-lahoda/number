@@ -1,17 +1,17 @@
 //! Purpose of this number to have "infinite" size and precision to calculate input and inverses,
 //! for prop testing, fuzz setup, assertions and inverse calculations.
-//! And double check engine logic regarding numerics and possible rouning limits/errors.
+//! And double check engine logic regarding numerics and possible rounding limits/errors.
 //! Usually such tests are written in Python, so we here go Rust approach.
 //!
 //! Math in engine is hard to read,
 //! all these upcasts, downcasts, roundings, types, zero division checking, error handlings.
 //! This number is slow, but works without all of that well.
 //!
-//! Maximal simplicity to cast from anything and itegration with engine types is a way.
+//! Maximal simplicity to cast from anything and integration with engine types is a way.
 //!
 //! Panics only on:
 //! - division by zero (guess we should not use NaN as result to fail fast)
-//! - failed conversion into smaller range types (instead of returing something which to be ? or unwrapped)
+//! - failed conversion into smaller range types (instead of returning something which to be ? or unwrapped)
 //!
 //! So something like:
 //! ```ignore
@@ -224,7 +224,11 @@ impl Number {
         )
     }
 
-    const fn __from_unsigned_ratio_parts(numerator: u64, denominator: u64, negative: bool) -> Self {
+    pub(crate) const fn __from_unsigned_ratio_parts(
+        numerator: u64,
+        denominator: u64,
+        negative: bool,
+    ) -> Self {
         if denominator == 0 {
             panic!("num ratio denominator should not be zero");
         }
@@ -253,37 +257,15 @@ impl Number {
     pub fn pow(self, exponent: i16) -> Self {
         Self(MalachitePow::pow(self.0, i64::from(exponent)))
     }
-
-    #[cfg(feature = "num-bigint")]
-    pub fn new_num_bigint(value: num_bigint::BigInt) -> Self {
-        Self(parse_rational(&value.to_string()))
-    }
-
-    #[cfg(feature = "num-bigint")]
-    pub fn new_num_biguint(value: num_bigint::BigUint) -> Self {
-        Self(parse_rational(&value.to_string()))
-    }
-
-    #[cfg(feature = "num-ration")]
-    pub fn new_num_rational<T>(value: num_rational::Ratio<T>) -> Self
-    where
-        T: core::fmt::Display,
-    {
-        let (numerator, denominator) = value.into_raw();
-        Self(parse_rational(&format!("{numerator}/{denominator}")))
-    }
-
-    #[cfg(feature = "ruint")]
-    pub fn new_ruint<const BITS: usize, const LIMBS: usize>(
-        value: ruint::Uint<BITS, LIMBS>,
-    ) -> Self {
-        Self(parse_rational(&value.to_string()))
-    }
 }
 
 impl fmt::Debug for Number {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let rational = self.0.to_string();
+        if f.alternate() {
+            return f.write_str(&rational);
+        }
+
         if !rational.contains('/') {
             return f.write_str(&rational);
         }
@@ -318,11 +300,11 @@ impl fmt::Debug for Number {
 
 #[macro_export]
 macro_rules! num {
-    (- $value:literal) => {
-        $crate::Number::__from_num_literal(stringify!($value), true)
+    (- $numerator:ident / - $denominator:tt) => {
+        -$crate::Number::from($numerator) / -$crate::Number::from($denominator)
     };
-    ($value:literal) => {
-        $crate::Number::__from_num_literal(stringify!($value), false)
+    (- $numerator:ident / $denominator:tt) => {
+        -$crate::Number::from($numerator) / $crate::Number::from($denominator)
     };
     (- $numerator:literal / - $denominator:literal) => {
         $crate::Number::__from_num_ratio_literals(
@@ -356,230 +338,28 @@ macro_rules! num {
             false,
         )
     };
-}
-
-#[cfg(any(
-    feature = "borsh",
-    feature = "num-bigint",
-    feature = "num-ration",
-    feature = "ruint",
-    feature = "serde"
-))]
-fn parse_rational(value: &str) -> Rational {
-    value
-        .parse()
-        .expect("num value should parse as malachite rational")
-}
-
-#[cfg(feature = "serde")]
-impl serde::Serialize for Number {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.0.to_string())
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for Number {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = <&str>::deserialize(deserializer)?;
-        value
-            .parse()
-            .map(Self)
-            .map_err(|()| serde::de::Error::custom("invalid rational"))
-    }
-}
-
-#[cfg(feature = "borsh")]
-impl borsh::BorshSerialize for Number {
-    fn serialize<W: borsh::io::Write>(&self, writer: &mut W) -> borsh::io::Result<()> {
-        borsh::BorshSerialize::serialize(self.0.to_string().as_bytes(), writer)
-    }
-}
-
-#[cfg(feature = "borsh")]
-impl borsh::BorshDeserialize for Number {
-    fn deserialize_reader<R: borsh::io::Read>(reader: &mut R) -> borsh::io::Result<Self> {
-        let bytes = <Vec<u8> as borsh::BorshDeserialize>::deserialize_reader(reader)?;
-        let value = core::str::from_utf8(&bytes)
-            .map_err(|error| borsh::io::Error::new(borsh::io::ErrorKind::InvalidData, error))?;
-        value.parse().map(Self).map_err(|()| {
-            borsh::io::Error::new(borsh::io::ErrorKind::InvalidData, "invalid rational")
-        })
-    }
-}
-
-#[cfg(feature = "num-traits")]
-impl num_traits::Zero for Number {
-    fn zero() -> Self {
-        Self::new_i64(0)
-    }
-
-    fn set_zero(&mut self) {
-        *self = Self::zero();
-    }
-
-    fn is_zero(&self) -> bool {
-        self == &Self::zero()
-    }
-}
-
-#[cfg(feature = "num-traits")]
-impl num_traits::One for Number {
-    fn one() -> Self {
-        Self::new_i64(1)
-    }
-
-    fn set_one(&mut self) {
-        *self = Self::one();
-    }
-
-    fn is_one(&self) -> bool {
-        self == &Self::one()
-    }
-}
-
-#[cfg(feature = "num-traits")]
-impl num_traits::Num for Number {
-    type FromStrRadixErr = ();
-
-    fn from_str_radix(value: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
-        if radix != 10 {
-            return Err(());
-        }
-        value.parse().map(Self)
-    }
-}
-
-#[cfg(feature = "num-traits")]
-impl num_traits::Signed for Number {
-    fn abs(&self) -> Self {
-        if self.is_negative() {
-            -self
-        } else {
-            self.clone()
-        }
-    }
-
-    fn abs_sub(&self, other: &Self) -> Self {
-        if self <= other {
-            Self::new_i64(0)
-        } else {
-            self - other
-        }
-    }
-
-    fn signum(&self) -> Self {
-        if self.is_positive() {
-            Self::new_i64(1)
-        } else if self.is_negative() {
-            Self::new_i64(-1)
-        } else {
-            Self::new_i64(0)
-        }
-    }
-
-    fn is_positive(&self) -> bool {
-        self > &Self::new_i64(0)
-    }
-
-    fn is_negative(&self) -> bool {
-        self < &Self::new_i64(0)
-    }
-}
-
-#[cfg(feature = "num-traits")]
-impl num_traits::Inv for Number {
-    type Output = Number;
-
-    fn inv(self) -> Self::Output {
-        Self::new_i64(1) / self
-    }
-}
-
-#[cfg(feature = "num-traits")]
-impl num_traits::Inv for &Number {
-    type Output = Number;
-
-    fn inv(self) -> Self::Output {
-        Number::new_i64(1) / self
-    }
-}
-
-#[cfg(feature = "num-traits")]
-impl num_traits::Pow<i16> for Number {
-    type Output = Number;
-
-    fn pow(self, exponent: i16) -> Self::Output {
-        Number::pow(self, exponent)
-    }
-}
-
-#[cfg(feature = "num-traits")]
-impl num_traits::Pow<i16> for &Number {
-    type Output = Number;
-
-    fn pow(self, exponent: i16) -> Self::Output {
-        Number::pow(self.clone(), exponent)
-    }
-}
-
-macro_rules! impl_from_nonzero {
-    ($type:ty, $constructor:ident) => {
-        impl From<$type> for Number {
-            fn from(value: $type) -> Self {
-                Self::$constructor(value)
-            }
-        }
+    (- $numerator:tt / - $denominator:tt) => {
+        -$crate::Number::from($numerator) / -$crate::Number::from($denominator)
+    };
+    (- $numerator:tt / $denominator:tt) => {
+        -$crate::Number::from($numerator) / $crate::Number::from($denominator)
+    };
+    ($numerator:tt / - $denominator:tt) => {
+        $crate::Number::from($numerator) / -$crate::Number::from($denominator)
+    };
+    ($numerator:tt / $denominator:tt) => {
+        $crate::Number::from($numerator) / $crate::Number::from($denominator)
+    };
+    (- $value:literal) => {
+        $crate::Number::__from_num_literal(stringify!($value), true)
+    };
+    ($value:literal) => {
+        $crate::Number::__from_num_literal(stringify!($value), false)
+    };
+    ($value:expr) => {
+        $crate::Number::from($value)
     };
 }
-
-macro_rules! impl_from_primitive {
-    ($type:ty, $constructor:ident) => {
-        impl From<$type> for Number {
-            fn from(value: $type) -> Self {
-                Self::$constructor(value)
-            }
-        }
-    };
-}
-
-impl From<&Number> for Number {
-    fn from(value: &Number) -> Self {
-        value.clone()
-    }
-}
-
-impl_from_primitive!(i8, new_i8);
-impl_from_primitive!(i16, new_i16);
-impl_from_primitive!(i32, new_i32);
-impl_from_primitive!(i64, new_i64);
-impl_from_primitive!(i128, new_i128);
-impl_from_primitive!(isize, new_isize);
-impl_from_primitive!(u8, new_u8);
-impl_from_primitive!(u16, new_u16);
-impl_from_primitive!(u32, new_u32);
-impl_from_primitive!(u64, new_u64);
-impl_from_primitive!(u128, new_u128);
-impl_from_primitive!(usize, new_usize);
-
-impl_from_nonzero!(core::num::NonZeroI8, new_nonzero_i8);
-impl_from_nonzero!(core::num::NonZeroI16, new_nonzero_i16);
-impl_from_nonzero!(core::num::NonZeroI32, new_nonzero_i32);
-impl_from_nonzero!(core::num::NonZeroI64, new_nonzero_i64);
-impl_from_nonzero!(core::num::NonZeroI128, new_nonzero_i128);
-impl_from_nonzero!(core::num::NonZeroIsize, new_nonzero_isize);
-impl_from_nonzero!(core::num::NonZeroU8, new_nonzero_u8);
-impl_from_nonzero!(core::num::NonZeroU16, new_nonzero_u16);
-impl_from_nonzero!(core::num::NonZeroU32, new_nonzero_u32);
-impl_from_nonzero!(core::num::NonZeroU64, new_nonzero_u64);
-impl_from_nonzero!(core::num::NonZeroU128, new_nonzero_u128);
-impl_from_nonzero!(core::num::NonZeroUsize, new_nonzero_usize);
 
 impl<T> Add<T> for Number
 where
@@ -727,7 +507,7 @@ impl<'a> Sum<&'a Number> for Number {
 
 macro_rules! impl_lhs_ops {
     ($type:ty) => {
-        impl Add<Number> for $type {
+        impl core::ops::Add<Number> for $type {
             type Output = Number;
 
             fn add(self, rhs: Number) -> Self::Output {
@@ -735,7 +515,7 @@ macro_rules! impl_lhs_ops {
             }
         }
 
-        impl Add<&Number> for $type {
+        impl core::ops::Add<&Number> for $type {
             type Output = Number;
 
             fn add(self, rhs: &Number) -> Self::Output {
@@ -743,7 +523,7 @@ macro_rules! impl_lhs_ops {
             }
         }
 
-        impl Sub<Number> for $type {
+        impl core::ops::Sub<Number> for $type {
             type Output = Number;
 
             fn sub(self, rhs: Number) -> Self::Output {
@@ -751,7 +531,7 @@ macro_rules! impl_lhs_ops {
             }
         }
 
-        impl Sub<&Number> for $type {
+        impl core::ops::Sub<&Number> for $type {
             type Output = Number;
 
             fn sub(self, rhs: &Number) -> Self::Output {
@@ -759,7 +539,7 @@ macro_rules! impl_lhs_ops {
             }
         }
 
-        impl Mul<Number> for $type {
+        impl core::ops::Mul<Number> for $type {
             type Output = Number;
 
             fn mul(self, rhs: Number) -> Self::Output {
@@ -767,7 +547,7 @@ macro_rules! impl_lhs_ops {
             }
         }
 
-        impl Mul<&Number> for $type {
+        impl core::ops::Mul<&Number> for $type {
             type Output = Number;
 
             fn mul(self, rhs: &Number) -> Self::Output {
@@ -775,7 +555,7 @@ macro_rules! impl_lhs_ops {
             }
         }
 
-        impl Div<Number> for $type {
+        impl core::ops::Div<Number> for $type {
             type Output = Number;
 
             fn div(self, rhs: Number) -> Self::Output {
@@ -783,7 +563,7 @@ macro_rules! impl_lhs_ops {
             }
         }
 
-        impl Div<&Number> for $type {
+        impl core::ops::Div<&Number> for $type {
             type Output = Number;
 
             fn div(self, rhs: &Number) -> Self::Output {
@@ -791,7 +571,7 @@ macro_rules! impl_lhs_ops {
             }
         }
 
-        impl Rem<Number> for $type {
+        impl core::ops::Rem<Number> for $type {
             type Output = Number;
 
             fn rem(self, rhs: Number) -> Self::Output {
@@ -799,7 +579,7 @@ macro_rules! impl_lhs_ops {
             }
         }
 
-        impl Rem<&Number> for $type {
+        impl core::ops::Rem<&Number> for $type {
             type Output = Number;
 
             fn rem(self, rhs: &Number) -> Self::Output {
@@ -833,39 +613,25 @@ impl_lhs_ops!(core::num::NonZeroU32);
 impl_lhs_ops!(core::num::NonZeroU64);
 impl_lhs_ops!(core::num::NonZeroU128);
 impl_lhs_ops!(core::num::NonZeroUsize);
+impl_lhs_ops!(bool);
+impl_lhs_ops!(Option<bool>);
 
+mod from;
+mod try_into;
+
+pub use try_into::TryFromNumberError;
+
+#[cfg(feature = "borsh")]
+mod borsh;
 #[cfg(feature = "num-bigint")]
-impl_lhs_ops!(num_bigint::BigInt);
-#[cfg(feature = "num-bigint")]
-impl_lhs_ops!(num_bigint::BigUint);
-
-#[cfg(feature = "num-bigint")]
-impl From<num_bigint::BigInt> for Number {
-    fn from(value: num_bigint::BigInt) -> Self {
-        Self::new_num_bigint(value)
-    }
-}
-
-#[cfg(feature = "num-bigint")]
-impl From<num_bigint::BigUint> for Number {
-    fn from(value: num_bigint::BigUint) -> Self {
-        Self::new_num_biguint(value)
-    }
-}
-
-#[cfg(feature = "num-ration")]
-impl<T> From<num_rational::Ratio<T>> for Number
-where
-    T: core::fmt::Display,
-{
-    fn from(value: num_rational::Ratio<T>) -> Self {
-        Self::new_num_rational(value)
-    }
-}
-
+mod num_bigint;
+#[cfg(feature = "num-rational")]
+mod num_rational;
+#[cfg(feature = "num-traits")]
+mod num_traits;
 #[cfg(feature = "ruint")]
-impl<const BITS: usize, const LIMBS: usize> From<ruint::Uint<BITS, LIMBS>> for Number {
-    fn from(value: ruint::Uint<BITS, LIMBS>) -> Self {
-        Self::new_ruint(value)
-    }
-}
+mod ruint;
+#[cfg(feature = "schemars")]
+mod schemars;
+#[cfg(feature = "serde")]
+mod serde;

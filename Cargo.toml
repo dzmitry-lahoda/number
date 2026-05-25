@@ -2,14 +2,15 @@
 name = "number"
 version = "0.1.0"
 edition = "2024"
-description = "tired of numberic casts and conversion? use composable number!"
+description = "tired of numberic casts and manual conversions? use composable number!"
 
 [features]
 borsh = ["dep:borsh"]
 num-bigint = ["dep:num-bigint"]
-num-ration = ["dep:num-rational"]
+num-rational = ["dep:num-rational"]
 num-traits = ["dep:num-traits"]
 ruint = ["dep:ruint"]
+schemars = ["dep:schemars"]
 serde = ["dep:serde"]
 
 [dependencies]
@@ -21,6 +22,7 @@ num-bigint = { version = "0.4.6", optional = true }
 num-rational = { version = "0.4.2", optional = true }
 num-traits = { version = "0.2.19", optional = true }
 ruint = { version = "1.17.2", optional = true }
+schemars = { version = "1.2", optional = true }
 serde = { version = "1.0.228", optional = true }
 
 [dev-dependencies]
