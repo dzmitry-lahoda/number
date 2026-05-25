@@ -15,19 +15,22 @@
 //!
 //! So something like:
 //! ```ignore
-//! num!(42.2) - 33i8
+//! num!(42/7) - 33
 //!
-//! num!(44) / 3i32 - u128::MAX * num!(2/3).pow(3i8)
+//! num!(44) / 3 - u128::MAX * num!(2/3).pow(3)
 //! ```
 
 use core::fmt;
+use core::iter::Sum;
+use core::ops::{Add, Div, Mul, Neg, Rem, Sub};
 
+use malachite_base::num::arithmetic::traits::Pow as MalachitePow;
 use malachite_nz::natural::Natural;
 use malachite_q::Rational;
 
 const DEBUG_FRACTIONAL_DIGITS: usize = 32;
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Number(Rational);
 
 impl Number {
@@ -135,6 +138,122 @@ impl Number {
         Self(Rational::from_signeds(numerator, denominator))
     }
 
+    #[doc(hidden)]
+    pub const fn __parse_num_literal(value: &str) -> (u64, u64) {
+        let bytes = value.as_bytes();
+        let mut index = 0;
+        let mut numerator = 0u64;
+        let mut denominator = 1u64;
+        let mut seen_decimal_point = false;
+        let mut seen_digit = false;
+
+        while index < bytes.len() {
+            let byte = bytes[index];
+            if byte == b'_' {
+                index += 1;
+                continue;
+            }
+
+            if byte == b'.' {
+                if seen_decimal_point {
+                    panic!("num literal should contain at most one decimal point");
+                }
+                seen_decimal_point = true;
+                index += 1;
+                continue;
+            }
+
+            if byte < b'0' || byte > b'9' {
+                panic!("num literal should be an integer or finite decimal");
+            }
+
+            let digit = (byte - b'0') as u64;
+            if numerator > (u64::MAX - digit) / 10 {
+                panic!("num literal numerator should fit u64");
+            }
+            numerator = numerator * 10 + digit;
+            if seen_decimal_point {
+                if denominator > u64::MAX / 10 {
+                    panic!("num literal denominator should fit u64");
+                }
+                denominator *= 10;
+            }
+            seen_digit = true;
+            index += 1;
+        }
+
+        if !seen_digit {
+            panic!("num literal should contain digits");
+        }
+
+        (numerator, denominator)
+    }
+
+    #[doc(hidden)]
+    pub const fn __from_num_literal(value: &str, negative: bool) -> Self {
+        let (numerator, denominator) = Self::__parse_num_literal(value);
+        Self::__from_unsigned_ratio_parts(numerator, denominator, negative)
+    }
+
+    #[doc(hidden)]
+    pub const fn __from_num_ratio_literals(
+        numerator: &str,
+        numerator_negative: bool,
+        denominator: &str,
+        denominator_negative: bool,
+    ) -> Self {
+        let (left_numerator, left_denominator) = Self::__parse_num_literal(numerator);
+        let (right_numerator, right_denominator) = Self::__parse_num_literal(denominator);
+        if right_numerator == 0 {
+            panic!("num ratio denominator should not be zero");
+        }
+
+        let numerator = (left_numerator as u128) * (right_denominator as u128);
+        let denominator = (left_denominator as u128) * (right_numerator as u128);
+        if numerator > u64::MAX as u128 {
+            panic!("num ratio numerator should fit u64");
+        }
+        if denominator > u64::MAX as u128 {
+            panic!("num ratio denominator should fit u64");
+        }
+
+        Self::__from_unsigned_ratio_parts(
+            numerator as u64,
+            denominator as u64,
+            numerator_negative != denominator_negative,
+        )
+    }
+
+    const fn __from_unsigned_ratio_parts(numerator: u64, denominator: u64, negative: bool) -> Self {
+        if denominator == 0 {
+            panic!("num ratio denominator should not be zero");
+        }
+
+        if negative {
+            if denominator > i64::MAX as u64 {
+                panic!("negative num literal denominator should fit i64");
+            }
+            if numerator > i64::MAX as u64 + 1 {
+                panic!("negative num literal numerator should fit i64");
+            }
+            let signed_numerator = if numerator == i64::MAX as u64 + 1 {
+                i64::MIN
+            } else {
+                -(numerator as i64)
+            };
+            Self(Rational::const_from_signeds(
+                signed_numerator,
+                denominator as i64,
+            ))
+        } else {
+            Self(Rational::const_from_unsigneds(numerator, denominator))
+        }
+    }
+
+    pub fn pow(self, exponent: i16) -> Self {
+        Self(MalachitePow::pow(self.0, i64::from(exponent)))
+    }
+
     #[cfg(feature = "num-bigint")]
     pub fn new_num_bigint(value: num_bigint::BigInt) -> Self {
         Self(parse_rational(&value.to_string()))
@@ -200,16 +319,42 @@ impl fmt::Debug for Number {
 #[macro_export]
 macro_rules! num {
     (- $value:literal) => {
-        $crate::Number::new_i64(-$value)
+        $crate::Number::__from_num_literal(stringify!($value), true)
     };
     ($value:literal) => {
-        $crate::Number::new_u64($value)
+        $crate::Number::__from_num_literal(stringify!($value), false)
+    };
+    (- $numerator:literal / - $denominator:literal) => {
+        $crate::Number::__from_num_ratio_literals(
+            stringify!($numerator),
+            true,
+            stringify!($denominator),
+            true,
+        )
     };
     (- $numerator:literal / $denominator:literal) => {
-        $crate::Number::new_ratio_i64(-$numerator, $denominator)
+        $crate::Number::__from_num_ratio_literals(
+            stringify!($numerator),
+            true,
+            stringify!($denominator),
+            false,
+        )
+    };
+    ($numerator:literal / - $denominator:literal) => {
+        $crate::Number::__from_num_ratio_literals(
+            stringify!($numerator),
+            false,
+            stringify!($denominator),
+            true,
+        )
     };
     ($numerator:literal / $denominator:literal) => {
-        $crate::Number::new_ratio_i64($numerator, $denominator)
+        $crate::Number::__from_num_ratio_literals(
+            stringify!($numerator),
+            false,
+            stringify!($denominator),
+            false,
+        )
     };
 }
 
@@ -269,6 +414,121 @@ impl borsh::BorshDeserialize for Number {
     }
 }
 
+#[cfg(feature = "num-traits")]
+impl num_traits::Zero for Number {
+    fn zero() -> Self {
+        Self::new_i64(0)
+    }
+
+    fn set_zero(&mut self) {
+        *self = Self::zero();
+    }
+
+    fn is_zero(&self) -> bool {
+        self == &Self::zero()
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl num_traits::One for Number {
+    fn one() -> Self {
+        Self::new_i64(1)
+    }
+
+    fn set_one(&mut self) {
+        *self = Self::one();
+    }
+
+    fn is_one(&self) -> bool {
+        self == &Self::one()
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl num_traits::Num for Number {
+    type FromStrRadixErr = ();
+
+    fn from_str_radix(value: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
+        if radix != 10 {
+            return Err(());
+        }
+        value.parse().map(Self)
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl num_traits::Signed for Number {
+    fn abs(&self) -> Self {
+        if self.is_negative() {
+            -self
+        } else {
+            self.clone()
+        }
+    }
+
+    fn abs_sub(&self, other: &Self) -> Self {
+        if self <= other {
+            Self::new_i64(0)
+        } else {
+            self - other
+        }
+    }
+
+    fn signum(&self) -> Self {
+        if self.is_positive() {
+            Self::new_i64(1)
+        } else if self.is_negative() {
+            Self::new_i64(-1)
+        } else {
+            Self::new_i64(0)
+        }
+    }
+
+    fn is_positive(&self) -> bool {
+        self > &Self::new_i64(0)
+    }
+
+    fn is_negative(&self) -> bool {
+        self < &Self::new_i64(0)
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl num_traits::Inv for Number {
+    type Output = Number;
+
+    fn inv(self) -> Self::Output {
+        Self::new_i64(1) / self
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl num_traits::Inv for &Number {
+    type Output = Number;
+
+    fn inv(self) -> Self::Output {
+        Number::new_i64(1) / self
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl num_traits::Pow<i16> for Number {
+    type Output = Number;
+
+    fn pow(self, exponent: i16) -> Self::Output {
+        Number::pow(self, exponent)
+    }
+}
+
+#[cfg(feature = "num-traits")]
+impl num_traits::Pow<i16> for &Number {
+    type Output = Number;
+
+    fn pow(self, exponent: i16) -> Self::Output {
+        Number::pow(self.clone(), exponent)
+    }
+}
+
 macro_rules! impl_from_nonzero {
     ($type:ty, $constructor:ident) => {
         impl From<$type> for Number {
@@ -278,6 +538,35 @@ macro_rules! impl_from_nonzero {
         }
     };
 }
+
+macro_rules! impl_from_primitive {
+    ($type:ty, $constructor:ident) => {
+        impl From<$type> for Number {
+            fn from(value: $type) -> Self {
+                Self::$constructor(value)
+            }
+        }
+    };
+}
+
+impl From<&Number> for Number {
+    fn from(value: &Number) -> Self {
+        value.clone()
+    }
+}
+
+impl_from_primitive!(i8, new_i8);
+impl_from_primitive!(i16, new_i16);
+impl_from_primitive!(i32, new_i32);
+impl_from_primitive!(i64, new_i64);
+impl_from_primitive!(i128, new_i128);
+impl_from_primitive!(isize, new_isize);
+impl_from_primitive!(u8, new_u8);
+impl_from_primitive!(u16, new_u16);
+impl_from_primitive!(u32, new_u32);
+impl_from_primitive!(u64, new_u64);
+impl_from_primitive!(u128, new_u128);
+impl_from_primitive!(usize, new_usize);
 
 impl_from_nonzero!(core::num::NonZeroI8, new_nonzero_i8);
 impl_from_nonzero!(core::num::NonZeroI16, new_nonzero_i16);
@@ -291,6 +580,264 @@ impl_from_nonzero!(core::num::NonZeroU32, new_nonzero_u32);
 impl_from_nonzero!(core::num::NonZeroU64, new_nonzero_u64);
 impl_from_nonzero!(core::num::NonZeroU128, new_nonzero_u128);
 impl_from_nonzero!(core::num::NonZeroUsize, new_nonzero_usize);
+
+impl<T> Add<T> for Number
+where
+    T: Into<Number>,
+{
+    type Output = Number;
+
+    fn add(self, rhs: T) -> Self::Output {
+        Self(self.0 + rhs.into().0)
+    }
+}
+
+impl<T> Add<T> for &Number
+where
+    T: Into<Number>,
+{
+    type Output = Number;
+
+    fn add(self, rhs: T) -> Self::Output {
+        Number(self.0.clone() + rhs.into().0)
+    }
+}
+
+impl<T> Sub<T> for Number
+where
+    T: Into<Number>,
+{
+    type Output = Number;
+
+    fn sub(self, rhs: T) -> Self::Output {
+        Self(self.0 - rhs.into().0)
+    }
+}
+
+impl<T> Sub<T> for &Number
+where
+    T: Into<Number>,
+{
+    type Output = Number;
+
+    fn sub(self, rhs: T) -> Self::Output {
+        Number(self.0.clone() - rhs.into().0)
+    }
+}
+
+impl<T> Mul<T> for Number
+where
+    T: Into<Number>,
+{
+    type Output = Number;
+
+    fn mul(self, rhs: T) -> Self::Output {
+        Self(self.0 * rhs.into().0)
+    }
+}
+
+impl<T> Mul<T> for &Number
+where
+    T: Into<Number>,
+{
+    type Output = Number;
+
+    fn mul(self, rhs: T) -> Self::Output {
+        Number(self.0.clone() * rhs.into().0)
+    }
+}
+
+impl<T> Div<T> for Number
+where
+    T: Into<Number>,
+{
+    type Output = Number;
+
+    fn div(self, rhs: T) -> Self::Output {
+        Self(self.0 / rhs.into().0)
+    }
+}
+
+impl<T> Div<T> for &Number
+where
+    T: Into<Number>,
+{
+    type Output = Number;
+
+    fn div(self, rhs: T) -> Self::Output {
+        Number(self.0.clone() / rhs.into().0)
+    }
+}
+
+impl<T> Rem<T> for Number
+where
+    T: Into<Number>,
+{
+    type Output = Number;
+
+    fn rem(self, rhs: T) -> Self::Output {
+        Self(self.0 % rhs.into().0)
+    }
+}
+
+impl<T> Rem<T> for &Number
+where
+    T: Into<Number>,
+{
+    type Output = Number;
+
+    fn rem(self, rhs: T) -> Self::Output {
+        Number(self.0.clone() % rhs.into().0)
+    }
+}
+
+impl Neg for Number {
+    type Output = Number;
+
+    fn neg(self) -> Self::Output {
+        Self(-self.0)
+    }
+}
+
+impl Neg for &Number {
+    type Output = Number;
+
+    fn neg(self) -> Self::Output {
+        Number(-self.0.clone())
+    }
+}
+
+impl Sum for Number {
+    fn sum<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = Self>,
+    {
+        iter.fold(Self::new_i64(0), Add::add)
+    }
+}
+
+impl<'a> Sum<&'a Number> for Number {
+    fn sum<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = &'a Number>,
+    {
+        iter.fold(Self::new_i64(0), Add::add)
+    }
+}
+
+macro_rules! impl_lhs_ops {
+    ($type:ty) => {
+        impl Add<Number> for $type {
+            type Output = Number;
+
+            fn add(self, rhs: Number) -> Self::Output {
+                Number::from(self) + rhs
+            }
+        }
+
+        impl Add<&Number> for $type {
+            type Output = Number;
+
+            fn add(self, rhs: &Number) -> Self::Output {
+                Number::from(self) + rhs
+            }
+        }
+
+        impl Sub<Number> for $type {
+            type Output = Number;
+
+            fn sub(self, rhs: Number) -> Self::Output {
+                Number::from(self) - rhs
+            }
+        }
+
+        impl Sub<&Number> for $type {
+            type Output = Number;
+
+            fn sub(self, rhs: &Number) -> Self::Output {
+                Number::from(self) - rhs
+            }
+        }
+
+        impl Mul<Number> for $type {
+            type Output = Number;
+
+            fn mul(self, rhs: Number) -> Self::Output {
+                Number::from(self) * rhs
+            }
+        }
+
+        impl Mul<&Number> for $type {
+            type Output = Number;
+
+            fn mul(self, rhs: &Number) -> Self::Output {
+                Number::from(self) * rhs
+            }
+        }
+
+        impl Div<Number> for $type {
+            type Output = Number;
+
+            fn div(self, rhs: Number) -> Self::Output {
+                Number::from(self) / rhs
+            }
+        }
+
+        impl Div<&Number> for $type {
+            type Output = Number;
+
+            fn div(self, rhs: &Number) -> Self::Output {
+                Number::from(self) / rhs
+            }
+        }
+
+        impl Rem<Number> for $type {
+            type Output = Number;
+
+            fn rem(self, rhs: Number) -> Self::Output {
+                Number::from(self) % rhs
+            }
+        }
+
+        impl Rem<&Number> for $type {
+            type Output = Number;
+
+            fn rem(self, rhs: &Number) -> Self::Output {
+                Number::from(self) % rhs
+            }
+        }
+    };
+}
+
+impl_lhs_ops!(i8);
+impl_lhs_ops!(i16);
+impl_lhs_ops!(i32);
+impl_lhs_ops!(i64);
+impl_lhs_ops!(i128);
+impl_lhs_ops!(isize);
+impl_lhs_ops!(u8);
+impl_lhs_ops!(u16);
+impl_lhs_ops!(u32);
+impl_lhs_ops!(u64);
+impl_lhs_ops!(u128);
+impl_lhs_ops!(usize);
+impl_lhs_ops!(core::num::NonZeroI8);
+impl_lhs_ops!(core::num::NonZeroI16);
+impl_lhs_ops!(core::num::NonZeroI32);
+impl_lhs_ops!(core::num::NonZeroI64);
+impl_lhs_ops!(core::num::NonZeroI128);
+impl_lhs_ops!(core::num::NonZeroIsize);
+impl_lhs_ops!(core::num::NonZeroU8);
+impl_lhs_ops!(core::num::NonZeroU16);
+impl_lhs_ops!(core::num::NonZeroU32);
+impl_lhs_ops!(core::num::NonZeroU64);
+impl_lhs_ops!(core::num::NonZeroU128);
+impl_lhs_ops!(core::num::NonZeroUsize);
+
+#[cfg(feature = "num-bigint")]
+impl_lhs_ops!(num_bigint::BigInt);
+#[cfg(feature = "num-bigint")]
+impl_lhs_ops!(num_bigint::BigUint);
 
 #[cfg(feature = "num-bigint")]
 impl From<num_bigint::BigInt> for Number {
@@ -320,141 +867,5 @@ where
 impl<const BITS: usize, const LIMBS: usize> From<ruint::Uint<BITS, LIMBS>> for Number {
     fn from(value: ruint::Uint<BITS, LIMBS>) -> Self {
         Self::new_ruint(value)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Number;
-
-    #[test]
-    fn creates_from_primitive_integer() {
-        assert_eq!(Number::new_i32(-7), Number::new_i64(-7));
-    }
-
-    #[test]
-    fn creates_from_nonzero_integers() {
-        const I8: core::num::NonZeroI8 = core::num::NonZeroI8::new(-1).unwrap();
-        const I16: core::num::NonZeroI16 = core::num::NonZeroI16::new(-2).unwrap();
-        const I32: core::num::NonZeroI32 = core::num::NonZeroI32::new(-3).unwrap();
-        const I64: core::num::NonZeroI64 = core::num::NonZeroI64::new(-4).unwrap();
-        const ISIZE: core::num::NonZeroIsize = core::num::NonZeroIsize::new(-5).unwrap();
-        const U8: core::num::NonZeroU8 = core::num::NonZeroU8::new(1).unwrap();
-        const U16: core::num::NonZeroU16 = core::num::NonZeroU16::new(2).unwrap();
-        const U32: core::num::NonZeroU32 = core::num::NonZeroU32::new(3).unwrap();
-        const U64: core::num::NonZeroU64 = core::num::NonZeroU64::new(4).unwrap();
-        const USIZE: core::num::NonZeroUsize = core::num::NonZeroUsize::new(5).unwrap();
-
-        const FROM_I8: Number = Number::new_nonzero_i8(I8);
-        const FROM_I16: Number = Number::new_nonzero_i16(I16);
-        const FROM_I32: Number = Number::new_nonzero_i32(I32);
-        const FROM_I64: Number = Number::new_nonzero_i64(I64);
-        const FROM_ISIZE: Number = Number::new_nonzero_isize(ISIZE);
-        const FROM_U8: Number = Number::new_nonzero_u8(U8);
-        const FROM_U16: Number = Number::new_nonzero_u16(U16);
-        const FROM_U32: Number = Number::new_nonzero_u32(U32);
-        const FROM_U64: Number = Number::new_nonzero_u64(U64);
-        const FROM_USIZE: Number = Number::new_nonzero_usize(USIZE);
-
-        assert_eq!(FROM_I8, Number::new_i8(-1));
-        assert_eq!(FROM_I16, Number::new_i16(-2));
-        assert_eq!(FROM_I32, Number::new_i32(-3));
-        assert_eq!(FROM_I64, Number::new_i64(-4));
-        assert_eq!(FROM_ISIZE, Number::new_isize(-5));
-        assert_eq!(FROM_U8, Number::new_u8(1));
-        assert_eq!(FROM_U16, Number::new_u16(2));
-        assert_eq!(FROM_U32, Number::new_u32(3));
-        assert_eq!(FROM_U64, Number::new_u64(4));
-        assert_eq!(FROM_USIZE, Number::new_usize(5));
-
-        let i128 = core::num::NonZeroI128::new(-6).unwrap();
-        let u128 = core::num::NonZeroU128::new(6).unwrap();
-        assert_eq!(Number::new_nonzero_i128(i128), Number::new_i128(-6));
-        assert_eq!(Number::from(u128), Number::new_u128(6));
-    }
-
-    #[test]
-    fn creates_from_num_macro_at_const_time() {
-        const NEGATIVE: Number = num!(-1231232312311232123);
-        const ZERO: Number = num!(0);
-        const POSITIVE: Number = num!(123123123);
-        const RATIO: Number = num!(32 / 12);
-
-        assert_eq!(NEGATIVE, Number::new_i64(-1231232312311232123));
-        assert_eq!(ZERO, Number::new_i64(0));
-        assert_eq!(POSITIVE, Number::new_i64(123123123));
-        assert_eq!(RATIO, Number::new_ratio_i64(32, 12));
-    }
-
-    #[test]
-    fn debug_formats_rationals_as_decimal_numbers() {
-        assert_eq!(format!("{:?}", Number::new_ratio_i64(1, 2)), "0.5");
-        assert_eq!(
-            format!("{:?}", Number::new_ratio_i64(32, 12)),
-            "2.66666666666666666666666666666666..."
-        );
-        assert_eq!(
-            format!(
-                "{:?}",
-                Number::new_ratio_i128(10031232131231312321, 10_000_000_000)
-            ),
-            "1003123213.1231312321"
-        );
-    }
-
-    #[cfg(feature = "serde")]
-    #[test]
-    fn serde_serializes_as_string() {
-        let number = Number::new_ratio_i64(2, 3);
-        let encoded = serde_json::to_string(&number).unwrap();
-
-        assert_eq!(encoded, "\"2/3\"");
-        assert_eq!(serde_json::from_str::<Number>(&encoded).unwrap(), number);
-    }
-
-    #[cfg(feature = "borsh")]
-    #[test]
-    fn borsh_serializes_as_bytes() {
-        let number = Number::new_ratio_i64(2, 3);
-        let encoded = borsh::to_vec(&number).unwrap();
-
-        assert_eq!(&encoded[..4], 3u32.to_le_bytes().as_slice());
-        assert_eq!(&encoded[4..], b"2/3");
-        assert_eq!(borsh::from_slice::<Number>(&encoded).unwrap(), number);
-    }
-
-    #[cfg(feature = "num-bigint")]
-    #[test]
-    fn creates_from_num_bigint() {
-        let bigint = num_bigint::BigInt::parse_bytes(b"-123456789123456789", 10).unwrap();
-        let biguint = num_bigint::BigUint::parse_bytes(b"123456789123456789", 10).unwrap();
-
-        assert_eq!(
-            Number::new_num_bigint(bigint),
-            Number::new_i128(-123456789123456789)
-        );
-        assert_eq!(Number::from(biguint), Number::new_u128(123456789123456789));
-    }
-
-    #[cfg(feature = "num-ration")]
-    #[test]
-    fn creates_from_num_rational() {
-        let rational = num_rational::Ratio::new(-22i32, 7);
-
-        assert_eq!(
-            Number::new_num_rational(rational),
-            Number::from(num_rational::Ratio::new(-44i32, 14))
-        );
-    }
-
-    #[cfg(feature = "ruint")]
-    #[test]
-    fn creates_from_ruint() {
-        let value = ruint::aliases::U256::from(123456789123456789u128);
-
-        assert_eq!(
-            Number::new_ruint(value),
-            Number::new_u128(123456789123456789)
-        );
     }
 }

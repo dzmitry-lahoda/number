@@ -8,6 +8,7 @@ description = "tired of numberic casts and conversion? use composable number!"
 borsh = ["dep:borsh"]
 num-bigint = ["dep:num-bigint"]
 num-ration = ["dep:num-rational"]
+num-traits = ["dep:num-traits"]
 ruint = ["dep:ruint"]
 serde = ["dep:serde"]
 
@@ -18,6 +19,7 @@ malachite-nz = "0.9.1"
 malachite-q = "0.9.1"
 num-bigint = { version = "0.4.6", optional = true }
 num-rational = { version = "0.4.2", optional = true }
+num-traits = { version = "0.2.19", optional = true }
 ruint = { version = "1.17.2", optional = true }
 serde = { version = "1.0.228", optional = true }
 

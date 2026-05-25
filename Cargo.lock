@@ -679,6 +679,7 @@ dependencies = [
  "malachite-q",
  "num-bigint",
  "num-rational",
+ "num-traits",
  "ruint",
  "serde",
  "serde_json",
