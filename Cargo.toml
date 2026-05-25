@@ -2,14 +2,24 @@
 name = "number"
 version = "0.1.0"
 edition = "2024"
+description = "tired of numberic casts and conversion? use composable number!"
 
 [features]
+borsh = ["dep:borsh"]
 num-bigint = ["dep:num-bigint"]
 num-ration = ["dep:num-rational"]
 ruint = ["dep:ruint"]
+serde = ["dep:serde"]
 
 [dependencies]
+borsh = { version = "1.6.1", optional = true }
+malachite-base = "0.9.1"
+malachite-nz = "0.9.1"
 malachite-q = "0.9.1"
 num-bigint = { version = "0.4.6", optional = true }
 num-rational = { version = "0.4.2", optional = true }
 ruint = { version = "1.17.2", optional = true }
+serde = { version = "1.0.228", optional = true }
+
+[dev-dependencies]
+serde_json = "1.0.145"
