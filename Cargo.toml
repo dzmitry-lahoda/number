@@ -1,0 +1,15 @@
+[package]
+name = "number"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+num-bigint = ["dep:num-bigint"]
+num-ration = ["dep:num-rational"]
+ruint = ["dep:ruint"]
+
+[dependencies]
+malachite-q = "0.9.1"
+num-bigint = { version = "0.4.6", optional = true }
+num-rational = { version = "0.4.2", optional = true }
+ruint = { version = "1.17.2", optional = true }
