@@ -467,18 +467,39 @@ fn serde_serializes_as_string() {
 
 #[cfg(feature = "borsh")]
 #[test]
-fn borsh_serializes_as_bytes() {
+fn borsh_serializes_as_two_arbitrary_size_varints() {
     let number = Number::new_ratio_i64(2, 3);
     let encoded = borsh::to_vec(&number).unwrap();
 
-    assert_eq!(&encoded[..4], 3u32.to_le_bytes().as_slice());
-    assert_eq!(&encoded[4..], b"2/3");
+    assert_eq!(encoded, vec![4, 3]);
+    assert_eq!(borsh::from_slice::<Number>(&encoded).unwrap(), number);
+
+    let integer = Number::new_i64(42);
+    let encoded = borsh::to_vec(&integer).unwrap();
+    assert_eq!(encoded, vec![84, 1]);
+    assert_eq!(borsh::from_slice::<Number>(&encoded).unwrap(), integer);
+
+    let negative = Number::new_ratio_i64(-2, 3);
+    let encoded = borsh::to_vec(&negative).unwrap();
+    assert_eq!(encoded, vec![3, 3]);
+    assert_eq!(borsh::from_slice::<Number>(&encoded).unwrap(), negative);
+}
+
+#[cfg(feature = "borsh")]
+#[test]
+fn borsh_varints_support_values_larger_than_u128() {
+    let number = "680564733841876926926749214863536422912/3"
+        .parse::<Number>()
+        .unwrap();
+    let encoded = borsh::to_vec(&number).unwrap();
+
+    assert!(encoded.len() > 18);
     assert_eq!(borsh::from_slice::<Number>(&encoded).unwrap(), number);
 }
 
 #[cfg(feature = "borsh__schema")]
 #[test]
-fn borsh_schema_is_rational_string() {
+fn borsh_schema_is_two_varints() {
     use borsh::schema::{Definition, Fields};
 
     let schema = borsh::schema_container_of::<Number>();
@@ -487,10 +508,64 @@ fn borsh_schema_is_rational_string() {
     assert_eq!(
         schema.get_definition("Number").unwrap(),
         &Definition::Struct {
-            fields: Fields::UnnamedFields(vec!["String".to_owned()])
+            fields: Fields::UnnamedFields(vec![
+                "ZigZagVarint".to_owned(),
+                "UnsignedVarint".to_owned(),
+            ])
         }
     );
-    assert!(schema.get_definition("String").is_some());
+    assert_eq!(
+        schema.get_definition("ZigZagVarint").unwrap(),
+        &Definition::Sequence {
+            length_width: 0,
+            length_range: 1..=u64::MAX,
+            elements: "u8".to_owned(),
+        }
+    );
+    assert_eq!(
+        schema.get_definition("UnsignedVarint").unwrap(),
+        &Definition::Sequence {
+            length_width: 0,
+            length_range: 1..=u64::MAX,
+            elements: "u8".to_owned(),
+        }
+    );
+}
+
+#[cfg(feature = "scale")]
+#[test]
+fn scale_serializes_as_two_arbitrary_size_varints() {
+    use parity_scale_codec::{Decode, Encode};
+
+    let number = Number::new_ratio_i64(2, 3);
+    let encoded = number.encode();
+
+    assert_eq!(encoded, vec![4, 3]);
+    assert_eq!(Number::decode(&mut &encoded[..]).unwrap(), number);
+
+    let integer = Number::new_i64(42);
+    let encoded = integer.encode();
+    assert_eq!(encoded, vec![84, 1]);
+    assert_eq!(Number::decode(&mut &encoded[..]).unwrap(), integer);
+
+    let negative = Number::new_ratio_i64(-2, 3);
+    let encoded = negative.encode();
+    assert_eq!(encoded, vec![3, 3]);
+    assert_eq!(Number::decode(&mut &encoded[..]).unwrap(), negative);
+}
+
+#[cfg(feature = "scale")]
+#[test]
+fn scale_varints_support_values_larger_than_u128() {
+    use parity_scale_codec::{Decode, Encode};
+
+    let number = "680564733841876926926749214863536422912/3"
+        .parse::<Number>()
+        .unwrap();
+    let encoded = number.encode();
+
+    assert!(encoded.len() > 18);
+    assert_eq!(Number::decode(&mut &encoded[..]).unwrap(), number);
 }
 
 #[cfg(feature = "typical")]

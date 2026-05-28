@@ -9,6 +9,8 @@ property tests, simulation checks, and inverse calculations.
 The goal is to write formulas close to the way they appear on paper, without littering test code
 with casts, widening, rounding, or temporary integer types.
 
+All default calculations are exact, until use approximate features.
+
 ## Black-Scholes Shape
 
 For production pricing you should use a numeric library with the right floating-point and

@@ -584,8 +584,10 @@ mod try_into;
 pub use try_into::TryFromNumberError;
 
 #[cfg(feature = "borsh")]
+#[path = "encdec/borsh.rs"]
 mod borsh;
 #[cfg(feature = "float")]
+#[path = "approximate/float.rs"]
 mod float;
 #[cfg(feature = "num-bigint")]
 mod num_bigint;
@@ -593,11 +595,20 @@ mod num_bigint;
 mod num_rational;
 #[cfg(feature = "num-traits")]
 mod num_traits;
+#[cfg(any(feature = "borsh", feature = "scale", feature = "typical"))]
+#[path = "encdec/rational_varint.rs"]
+mod rational_varint;
 #[cfg(feature = "ruint")]
 mod ruint;
+#[cfg(feature = "scale")]
+#[path = "encdec/scale.rs"]
+mod scale;
 #[cfg(feature = "schemars")]
+#[path = "encdec/schemars.rs"]
 mod schemars;
 #[cfg(feature = "serde")]
+#[path = "encdec/serde.rs"]
 mod serde;
 #[cfg(feature = "typical")]
+#[path = "encdec/typical.rs"]
 pub mod typical;
