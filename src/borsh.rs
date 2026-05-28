@@ -11,7 +11,7 @@ impl ::borsh::BorshDeserialize for Number {
         let bytes = <Vec<u8> as ::borsh::BorshDeserialize>::deserialize_reader(reader)?;
         let value = core::str::from_utf8(&bytes)
             .map_err(|error| ::borsh::io::Error::new(::borsh::io::ErrorKind::InvalidData, error))?;
-        value.parse().map(Self).map_err(|()| {
+        value.parse().map_err(|()| {
             ::borsh::io::Error::new(::borsh::io::ErrorKind::InvalidData, "invalid rational")
         })
     }

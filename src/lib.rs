@@ -20,15 +20,11 @@
 //! num!(44) / 3 - u128::MAX * num!(2/3).pow(3)
 //! ```
 
-use core::fmt;
 use core::iter::Sum;
 use core::ops::{Add, Div, Mul, Neg, Rem, Sub};
 
 use malachite_base::num::arithmetic::traits::Pow as MalachitePow;
-use malachite_nz::natural::Natural;
 use malachite_q::Rational;
-
-const DEBUG_FRACTIONAL_DIGITS: usize = 32;
 
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Number(Rational);
@@ -256,45 +252,6 @@ impl Number {
 
     pub fn pow(self, exponent: i16) -> Self {
         Self(MalachitePow::pow(self.0, i64::from(exponent)))
-    }
-}
-
-impl fmt::Debug for Number {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let rational = self.0.to_string();
-        if f.alternate() {
-            return f.write_str(&rational);
-        }
-
-        if !rational.contains('/') {
-            return f.write_str(&rational);
-        }
-
-        if rational.starts_with('-') {
-            f.write_str("-")?;
-        }
-
-        let (mut before_point, after_point) = self.0.to_digits(&Natural::from(10u32));
-        if before_point.is_empty() {
-            f.write_str("0")?;
-        } else {
-            while let Some(digit) = before_point.pop() {
-                f.write_str(&digit.to_string())?;
-            }
-        }
-
-        f.write_str(".")?;
-        let digits_to_write = after_point.len().unwrap_or(DEBUG_FRACTIONAL_DIGITS);
-        for index in 0..digits_to_write {
-            let digit = after_point
-                .get(index)
-                .expect("fractional digit should exist");
-            f.write_str(&digit.to_string())?;
-        }
-        if !after_point.is_finite() {
-            f.write_str("...")?;
-        }
-        Ok(())
     }
 }
 
@@ -615,14 +572,21 @@ impl_lhs_ops!(core::num::NonZeroU128);
 impl_lhs_ops!(core::num::NonZeroUsize);
 impl_lhs_ops!(bool);
 impl_lhs_ops!(Option<bool>);
+#[cfg(feature = "float")]
+impl_lhs_ops!(f32);
+#[cfg(feature = "float")]
+impl_lhs_ops!(f64);
 
 mod from;
+mod string;
 mod try_into;
 
 pub use try_into::TryFromNumberError;
 
 #[cfg(feature = "borsh")]
 mod borsh;
+#[cfg(feature = "float")]
+mod float;
 #[cfg(feature = "num-bigint")]
 mod num_bigint;
 #[cfg(feature = "num-rational")]
@@ -635,3 +599,5 @@ mod ruint;
 mod schemars;
 #[cfg(feature = "serde")]
 mod serde;
+#[cfg(feature = "typical")]
+pub mod typical;

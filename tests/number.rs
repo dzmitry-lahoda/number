@@ -17,6 +17,46 @@ fn creates_from_boolean_state() {
 }
 
 #[test]
+fn parses_finite_decimal_strings_exactly() {
+    assert_eq!("10.5".parse::<Number>().unwrap(), Number::from(21) / 2);
+    assert_eq!(
+        "-.125".parse::<Number>().unwrap(),
+        Number::new_ratio_i64(-1, 8)
+    );
+    assert_eq!("1.25e2".parse::<Number>().unwrap(), Number::from(125));
+    assert_eq!(
+        "1e-3".parse::<Number>().unwrap(),
+        Number::new_ratio_i64(1, 1000)
+    );
+}
+
+#[cfg(feature = "float")]
+#[test]
+fn creates_from_finite_floats() {
+    let half = 0.5f64;
+
+    assert_eq!(Number::new_f32(0.5f32), Number::new_ratio_i64(1, 2));
+    assert_eq!(Number::new_f64(-1.25f64), Number::new_ratio_i64(-5, 4));
+    assert_eq!(
+        Number::new_f32(0.1f32),
+        Number::new_ratio_i64(13_421_773, 134_217_728)
+    );
+    assert_eq!(
+        Number::new_f64(0.1f64),
+        Number::new_ratio_i128(3_602_879_701_896_397, 36_028_797_018_963_968)
+    );
+    assert_eq!(num!(half), Number::new_ratio_i64(1, 2));
+}
+
+#[cfg(feature = "float")]
+#[test]
+fn rejects_non_finite_floats() {
+    assert!(Number::try_new_f32(f32::NAN).is_err());
+    assert!(Number::try_new_f64(f64::INFINITY).is_err());
+    assert!(Number::try_new_f64(f64::NEG_INFINITY).is_err());
+}
+
+#[test]
 fn supports_ordering_and_hashing() {
     let mut values = [Number::new_i64(2), Number::new_ratio_i64(1, 2)];
     values.sort();
@@ -87,6 +127,14 @@ fn supports_math_ops_with_convertible_numbers() {
     assert_eq!(false * Number::new_i64(2), Number::new_i64(-2));
     assert_eq!(Some(true) - Number::new_i64(2), Number::new_i64(-1));
     assert_eq!(None::<bool> + Number::new_i64(2), Number::new_i64(2));
+}
+
+#[cfg(feature = "float")]
+#[test]
+fn supports_math_ops_with_floats() {
+    assert_eq!(0.5f32 + Number::new_i64(2), Number::new_ratio_i64(5, 2));
+    assert_eq!(2.5f64 * Number::new_i64(2), Number::new_i64(5));
+    assert_eq!(Number::new_i64(1) / 0.5f64, Number::new_i64(2));
 }
 
 #[test]
@@ -550,10 +598,18 @@ fn creates_from_ruint() {
     );
 }
 
-#[cfg(feature = "serde")]
+#[cfg(all(feature = "serde", feature = "float"))]
 #[test]
 fn serde_parses_decimal() {
     let json = "10.5";
+    let num: Number = serde_json::from_str(json).unwrap();
+    assert_eq!(num, Number::from(21) / 2);
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn serde_parses_decimal_string_without_float_feature() {
+    let json = "\"10.5\"";
     let num: Number = serde_json::from_str(json).unwrap();
     assert_eq!(num, Number::from(21) / 2);
 }

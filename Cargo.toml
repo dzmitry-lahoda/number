@@ -6,12 +6,14 @@ description = "tired of numberic casts and manual conversions? use composable nu
 
 [features]
 borsh = ["dep:borsh"]
+float = []
 num-bigint = ["dep:num-bigint"]
 num-rational = ["dep:num-rational"]
 num-traits = ["dep:num-traits"]
 ruint = ["dep:ruint"]
 schemars = ["dep:schemars"]
 serde = ["dep:serde"]
+typical = []
 
 [dependencies]
 borsh = { version = "1.6.1", optional = true }

@@ -35,7 +35,7 @@ impl ::num_traits::Num for Number {
         if radix != 10 {
             return Err(());
         }
-        value.parse().map(Self)
+        value.parse()
     }
 }
 
