@@ -549,3 +549,19 @@ fn creates_from_ruint() {
         Number::new_u128(123456789123456789)
     );
 }
+
+#[cfg(feature = "serde")]
+#[test]
+fn serde_parses_decimal() {
+    let json = "10.5";
+    let num: Number = serde_json::from_str(json).unwrap();
+    assert_eq!(num, Number::from(21) / 2);
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn serde_parses_integer() {
+    let json = "10";
+    let num: Number = serde_json::from_str(json).unwrap();
+    assert_eq!(num, Number::from(10i32));
+}
