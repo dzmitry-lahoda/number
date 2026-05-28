@@ -476,6 +476,59 @@ fn borsh_serializes_as_bytes() {
     assert_eq!(borsh::from_slice::<Number>(&encoded).unwrap(), number);
 }
 
+#[cfg(feature = "typical")]
+#[test]
+fn typical_serializes_as_two_arbitrary_size_varints() {
+    use number::typical::{Deserialize, Serialize};
+
+    let number = Number::new_ratio_i64(2, 3);
+    let mut encoded = Vec::new();
+    number.serialize(&mut encoded).unwrap();
+
+    assert_eq!(encoded, vec![4, 3]);
+    assert_eq!(number.size(), encoded.len());
+    assert_eq!(
+        Number::deserialize(std::io::Cursor::new(encoded)).unwrap(),
+        number
+    );
+
+    let integer = Number::new_i64(42);
+    let mut encoded = Vec::new();
+    integer.serialize(&mut encoded).unwrap();
+    assert_eq!(encoded, vec![84, 1]);
+    assert_eq!(
+        Number::deserialize(std::io::Cursor::new(encoded)).unwrap(),
+        integer
+    );
+
+    let negative = Number::new_ratio_i64(-2, 3);
+    let mut encoded = Vec::new();
+    negative.serialize(&mut encoded).unwrap();
+    assert_eq!(encoded, vec![3, 3]);
+    assert_eq!(
+        Number::deserialize(std::io::Cursor::new(encoded)).unwrap(),
+        negative
+    );
+}
+
+#[cfg(feature = "typical")]
+#[test]
+fn typical_varints_support_values_larger_than_u128() {
+    use number::typical::{Deserialize, Serialize};
+
+    let number = "680564733841876926926749214863536422912/3"
+        .parse::<Number>()
+        .unwrap();
+    let mut encoded = Vec::new();
+    number.serialize(&mut encoded).unwrap();
+
+    assert!(encoded.len() > 18);
+    assert_eq!(
+        Number::deserialize(std::io::Cursor::new(encoded)).unwrap(),
+        number
+    );
+}
+
 #[cfg(feature = "schemars")]
 #[test]
 fn schemars_schema_is_string() {
