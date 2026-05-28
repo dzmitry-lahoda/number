@@ -476,6 +476,23 @@ fn borsh_serializes_as_bytes() {
     assert_eq!(borsh::from_slice::<Number>(&encoded).unwrap(), number);
 }
 
+#[cfg(feature = "borsh__schema")]
+#[test]
+fn borsh_schema_is_rational_string() {
+    use borsh::schema::{Definition, Fields};
+
+    let schema = borsh::schema_container_of::<Number>();
+
+    assert_eq!(schema.declaration(), "Number");
+    assert_eq!(
+        schema.get_definition("Number").unwrap(),
+        &Definition::Struct {
+            fields: Fields::UnnamedFields(vec!["String".to_owned()])
+        }
+    );
+    assert!(schema.get_definition("String").is_some());
+}
+
 #[cfg(feature = "typical")]
 #[test]
 fn typical_serializes_as_two_arbitrary_size_varints() {

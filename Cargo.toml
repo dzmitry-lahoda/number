@@ -6,6 +6,7 @@ description = "tired of numberic casts and manual conversions? use composable nu
 
 [features]
 borsh = ["dep:borsh"]
+borsh__schema = ["borsh", "borsh/unstable__schema"]
 float = []
 num-bigint = ["dep:num-bigint"]
 num-rational = ["dep:num-rational"]
